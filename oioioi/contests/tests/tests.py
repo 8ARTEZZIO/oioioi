@@ -1454,14 +1454,35 @@ class TestRejudgeViewPermissions(TestCase):
         return judge.call_count
 
     def test_permissions(self):
+        # anonymous user
         self.assertEqual(self._rejudge(), 0)  # anonymous
+
+        # plain user
         self.client.login(username="test_user")
         self.assertEqual(self._rejudge(), 0)
+
         other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
         ContestPermission.objects.create(user=User.objects.get(username="test_user"), contest=other, permission="contests.contest_admin")
         self.assertEqual(self._rejudge("other"), 0)  # submission 1 is in contest "c"
+
+        # contest observer: can see submissions but must not rejudge
+        observer = User.objects.get(username="test_observer")
+        ContestPermission.objects.get_or_create(
+            user=observer,
+            contest_id="c",
+            permission="contests.contest_observer",
+        )
+        self.assertTrue(self.client.login(username="test_observer"))
+        self.assertEqual(self._rejudge(), 0)
+
+        # contest admin
         self.client.login(username="test_contest_basicadmin")
         self.assertEqual(self._rejudge(), 1)
+
+        # GET must be rejected with 405, not crash with a 500
+        url = reverse("oioioiadmin:contests_submission_changelist", kwargs={"contest_id": "c"}) + "rejudge/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 405)
 
 
 class TestContestAdmin(TestCase):
